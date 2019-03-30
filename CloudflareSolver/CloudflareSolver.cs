@@ -81,79 +81,116 @@ namespace Cloudflare
                 headers.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/71.0.3578.98 Safari/537.36");
         }
 
-        private string PrepareJsScript(Uri targetUri, Match defineMatch, MatchCollection calcMatches)
+        private string PrepareJsScript(Uri targetUri, Match defineMatch, MatchCollection calcMatches, Match htmlHiddenMatch)
         {
             var solveScriptStringBuilder = new StringBuilder(defineMatch.Value);
 
             foreach (Match calcMatch in calcMatches)
-                solveScriptStringBuilder.Append(calcMatch.Value);
+            {
+                if (calcMatch.Value.EndsWith("}();") && calcMatch.Value.Contains("eval(eval("))
+                {
+                    var i = calcMatch.Value.IndexOf("function", StringComparison.Ordinal);
+                    solveScriptStringBuilder.Append(calcMatch.Value.Substring(0, i) + htmlHiddenMatch.Groups["inner"].Value + ";");
+                }
+                else if (calcMatch.Value.EndsWith(")))));") && calcMatch.Value.Contains("return eval("))
+                {
+                    var match = CloudflareRegex.JsPParamRegex.Match(calcMatch.Value);
+                    if (match.Success)
+                    {
+                        var p = match.Groups["p"].Value;
+                        var i = calcMatch.Value.IndexOf("(function", StringComparison.Ordinal);
+                        solveScriptStringBuilder.Append(calcMatch.Value.Substring(0, i) + $"'{targetUri.Host}'.charCodeAt({p})" + ");");
+                    }
+                }
+                else
+                {
+                    solveScriptStringBuilder.Append(calcMatch.Value);
+                }
+            }
 
-            solveScriptStringBuilder.Append($"+{defineMatch.Groups["className"].Value}.{defineMatch.Groups["propName"].Value}.toFixed(10) + {targetUri.Host.Length}");
+            solveScriptStringBuilder.Append($"+{defineMatch.Groups["className"].Value}.{defineMatch.Groups["propName"].Value}.toFixed(10)");
 
             return solveScriptStringBuilder.ToString();
         }
 
-        public async Task<CloudflareSolveResult> Solve(HttpClient httpClient, HttpClientHandler httpClientHandler, Uri targetUri, bool validateCloudflare = true, CloudflareDetectResult detectResult = null)
+        public async Task<CloudflareSolveResult> Solve(HttpClient httpClient, HttpClientHandler httpClientHandler, Uri targetUri, int maxRetry = 3, bool validateCloudflare = true, CloudflareDetectResult detectResult = null)
         {
-            if (detectResult == null)
-                detectResult = await Detect(httpClient, httpClientHandler, targetUri, validateCloudflare);
+            var lastResult = default(CloudflareSolveResult);
 
-            switch (detectResult.Protection)
+            for (var i = 0; i < maxRetry; i++)
             {
-                case CloudflareProtection.NoProtection:
-                    return new CloudflareSolveResult
-                    {
-                        Success = true,
-                        FailReason = "No protection detected",
-                        DetectResult = detectResult,
-                    };
-                case CloudflareProtection.JavaScript:
-                    {
-                        var solve = await SolveJs(httpClient, targetUri, detectResult.Html);
-                        return new CloudflareSolveResult
+                if (detectResult == null)
+                    detectResult = await Detect(httpClient, httpClientHandler, targetUri, validateCloudflare);
+
+                switch (detectResult.Protection)
+                {
+                    case CloudflareProtection.NoProtection:
+                        lastResult = new CloudflareSolveResult
                         {
-                            Success = solve.Success,
-                            FailReason = solve.FailReason,
+                            Success = true,
+                            FailReason = "No protection detected",
                             DetectResult = detectResult,
                         };
-                    }
-                case CloudflareProtection.Captcha:
-                    {
-                        if (!Is2CaptchaEnabled())
+                        break;
+                    case CloudflareProtection.JavaScript:
                         {
-                            return new CloudflareSolveResult
+                            var solve = await SolveJs(httpClient, targetUri, detectResult.Html);
+                            lastResult = new CloudflareSolveResult
                             {
-                                Success = false,
-                                FailReason = "Missing 2Captcha API key to solve the captcha",
+                                Success = solve.Success,
+                                FailReason = solve.FailReason,
                                 DetectResult = detectResult,
                             };
                         }
-
-                        var solve = await SolveCaptcha(httpClient, targetUri, detectResult.Html);
-                        return new CloudflareSolveResult
+                        break;
+                    case CloudflareProtection.Captcha:
                         {
-                            Success = solve.Success,
-                            FailReason = solve.FailReason,
+                            if (!Is2CaptchaEnabled())
+                            {
+                                lastResult = new CloudflareSolveResult
+                                {
+                                    Success = false,
+                                    FailReason = "Missing 2Captcha API key to solve the captcha",
+                                    DetectResult = detectResult,
+                                };
+                            }
+
+                            var solve = await SolveCaptcha(httpClient, targetUri, detectResult.Html);
+                            lastResult = new CloudflareSolveResult
+                            {
+                                Success = solve.Success,
+                                FailReason = solve.FailReason,
+                                DetectResult = detectResult,
+                            };
+                        }
+                        break;
+                    case CloudflareProtection.Banned:
+                        lastResult = new CloudflareSolveResult
+                        {
+                            Success = false,
+                            FailReason = "This IP address is banned on the website",
                             DetectResult = detectResult,
                         };
-                    }
-                case CloudflareProtection.Banned:
-                    return new CloudflareSolveResult
-                    {
-                        Success = false,
-                        FailReason = "This IP address is banned on the website",
-                        DetectResult = detectResult,
-                    };
-                case CloudflareProtection.Unknown:
-                    return new CloudflareSolveResult
-                    {
-                        Success = false,
-                        FailReason = "Unknown protection detected",
-                        DetectResult = detectResult,
-                    };
-                default:
-                    throw new ArgumentOutOfRangeException();
+                        break;
+                    case CloudflareProtection.Unknown:
+                        lastResult = new CloudflareSolveResult
+                        {
+                            Success = false,
+                            FailReason = "Unknown protection detected",
+                            DetectResult = detectResult,
+                        };
+                        break;
+                    default:
+                        throw new ArgumentOutOfRangeException();
+                }
+
+                if (lastResult.Success)
+                    return lastResult;
+
+                detectResult = null;
             }
+
+            return lastResult;
         }
 
         public async Task<CloudflareDetectResult> Detect(HttpClient httpClient, HttpClientHandler httpClientHandler, Uri targetUri, bool validateCloudflare = true)
@@ -232,6 +269,12 @@ namespace Cloudflare
                 return new InternalSolveResult(false, "Cloudflare (JS): form tag not found");
             }
 
+            var htmlHidden = CloudflareRegex.JsHtmlHiddenRegex.Match(html);
+            if (!htmlHidden.Success)
+            {
+                return new InternalSolveResult(false, "Cloudflare (JS): hidden html not found");
+            }
+
             var scriptMatch = CloudflareRegex.ScriptRegex.Match(html);
             if (!scriptMatch.Success)
             {
@@ -252,10 +295,10 @@ namespace Cloudflare
                 return new InternalSolveResult(false, "Cloudflare (JS): challenge not found");
             }
 
-            var solveJsScript = PrepareJsScript(targetUri, defineMatch, calcMatches);
+            var solveJsScript = PrepareJsScript(targetUri, defineMatch, calcMatches, htmlHidden);
 
             var action = $"{targetUri.Scheme}://{targetUri.Host}{formMatch.Groups["action"]}";
-            var s = formMatch.Groups["s"].Success ? formMatch.Groups["s"].Value : null;
+            var s = formMatch.Groups["s"].Value;
             var jschl_vc = formMatch.Groups["jschl_vc"].Value;
             var pass = formMatch.Groups["pass"].Value;
             var jschl_answer = ExecuteJavaScript(solveJsScript);
@@ -267,11 +310,7 @@ namespace Cloudflare
 
         private async Task<InternalSolveResult> SubmitJsSolution(HttpClient httpClient, string action, string s, string jschl_vc, string pass, string jschl_answer)
         {
-            var query = $"jschl_vc={Uri.EscapeDataString(jschl_vc)}&pass={Uri.EscapeDataString(pass)}&jschl_answer={Uri.EscapeDataString(jschl_answer)}";
-
-            // query order is very important, 's' must go first if exists
-            if (s != null)
-                query = $"s={Uri.EscapeDataString(s)}&{query}";
+            var query = $"s={Uri.EscapeDataString(s)}&jschl_vc={Uri.EscapeDataString(jschl_vc)}&pass={Uri.EscapeDataString(pass)}&jschl_answer={Uri.EscapeDataString(jschl_answer)}";
 
             var response = await httpClient.GetAsync($"{action}?{query}");
             if (response.StatusCode != HttpStatusCode.Found)

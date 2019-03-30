@@ -15,7 +15,7 @@ namespace Cloudflare.Sandbox
             var httpClientHandler = new HttpClientHandler();
             var httpClient = new HttpClient(httpClientHandler);
             var uri = new Uri("https://uam.zaczero.pl/");
-            
+
             var result = cf.Solve(httpClient, httpClientHandler, uri).Result;
             if (result.Success)
             {
