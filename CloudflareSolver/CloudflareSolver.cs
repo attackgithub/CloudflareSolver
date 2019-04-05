@@ -2,6 +2,7 @@
 using Jint;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -78,7 +79,16 @@ namespace Cloudflare
                 headers.Referrer = targetUri;
 
             if (headers.UserAgent.Count == 0)
-                headers.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/71.0.3578.98 Safari/537.36");
+                headers.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/73.0.3683.86 Safari/537.36");
+
+            if (headers.Connection.Count == 0)
+                headers.Connection.ParseAdd("keep-alive");
+
+            if (!headers.Contains("DNT"))
+                headers.Add("DNT", "1");
+
+            if (!headers.Contains("Upgrade-Insecure-Requests"))
+                headers.Add("Upgrade-Insecure-Requests", "1");
         }
 
         private string PrepareJsScript(Uri targetUri, Match defineMatch, MatchCollection calcMatches, Match htmlHiddenMatch)
@@ -198,6 +208,7 @@ namespace Cloudflare
             PrepareHttpHandler(httpClientHandler);
             PrepareHttpHeaders(httpClient.DefaultRequestHeaders, targetUri);
 
+            await httpClient.GetAsync(targetUri);
             var response = await httpClient.GetAsync(targetUri);
 
             if (response.StatusCode == HttpStatusCode.ServiceUnavailable)
