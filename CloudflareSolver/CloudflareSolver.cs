@@ -2,6 +2,7 @@
 using Jint;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Net;
 using System.Net.Http;
@@ -45,13 +46,12 @@ namespace Cloudflare
             return _twoCaptcha != null;
         }
 
-        private string ExecuteJavaScript(string script)
+        private double ExecuteJavaScript(string script)
         {
             return new Engine()
                 .Execute(script)
                 .GetCompletionValue()
-                .ToObject()
-                .ToString();
+                .AsNumber();
         }
 
         private void PrepareHttpHandler(HttpClientHandler httpClientHandler)
@@ -312,7 +312,7 @@ namespace Cloudflare
             var s = formMatch.Groups["s"].Value;
             var jschl_vc = formMatch.Groups["jschl_vc"].Value;
             var pass = formMatch.Groups["pass"].Value;
-            var jschl_answer = ExecuteJavaScript(solveJsScript);
+            var jschl_answer = ExecuteJavaScript(solveJsScript).ToString(CultureInfo.InvariantCulture);
 
             await Task.Delay(4000 + 100);
 
