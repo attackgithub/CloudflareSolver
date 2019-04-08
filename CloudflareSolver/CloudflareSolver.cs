@@ -314,7 +314,7 @@ namespace Cloudflare
             var pass = formMatch.Groups["pass"].Value;
             var jschl_answer = ExecuteJavaScript(solveJsScript).ToString(CultureInfo.InvariantCulture);
 
-            await Task.Delay(4000 + 100);
+            await Task.Delay(4000);
 
             return await SubmitJsSolution(httpClient, action, s, jschl_vc, pass, jschl_answer);
         }
