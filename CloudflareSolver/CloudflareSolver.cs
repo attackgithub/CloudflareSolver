@@ -1,9 +1,9 @@
-﻿using _2Captcha;
+﻿using Cloudflare.Interfaces;
+using Cloudflare.Structs;
 using Jint;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.IO;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -15,19 +15,10 @@ namespace Cloudflare
 {
     public class CloudflareSolver
     {
-        private struct InternalSolveResult
-        {
-            public readonly bool Success;
-            public readonly string FailReason;
+        private const string LayerJavaScript = "JavaScript";
+        private const string LayerCaptcha = "Captcha";
 
-            public InternalSolveResult(bool success, string failReason)
-            {
-                Success = success;
-                FailReason = failReason;
-            }
-        }
-
-        private readonly TwoCaptcha _twoCaptcha;
+        private readonly ICaptchaProvider _captchaProvider;
         private readonly HashSet<int> _statusCodeWhitelist = new HashSet<int>
         {
             200,
@@ -35,18 +26,22 @@ namespace Cloudflare
             404, 410,
         };
 
-        public CloudflareSolver(string _2CaptchaKey = null)
+        public CloudflareSolver()
         {
-            if (!string.IsNullOrEmpty(_2CaptchaKey))
-                _twoCaptcha = new TwoCaptcha(_2CaptchaKey);
+            _captchaProvider = null;
         }
 
-        private bool Is2CaptchaEnabled()
+        public CloudflareSolver(ICaptchaProvider captchaProvider)
         {
-            return _twoCaptcha != null;
+            _captchaProvider = captchaProvider;
         }
 
-        private double ExecuteJavaScript(string script)
+        private bool IsCaptchaSolvingEnabled()
+        {
+            return _captchaProvider != null;
+        }
+
+        private static double ExecuteJavaScript(string script)
         {
             return new Engine()
                 .Execute(script)
@@ -54,7 +49,7 @@ namespace Cloudflare
                 .AsNumber();
         }
 
-        private void PrepareHttpHandler(HttpClientHandler httpClientHandler)
+        private static void PrepareHttpHandler(HttpClientHandler httpClientHandler)
         {
             try
             {
@@ -64,7 +59,7 @@ namespace Cloudflare
             { }
         }
 
-        private void PrepareHttpHeaders(HttpRequestHeaders headers, Uri targetUri)
+        private static void PrepareHttpHeaders(HttpRequestHeaders headers, Uri targetUri)
         {
             if (headers.Accept.Count == 0)
                 headers.Accept.ParseAdd("text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8");
@@ -91,7 +86,7 @@ namespace Cloudflare
                 headers.Add("Upgrade-Insecure-Requests", "1");
         }
 
-        private string PrepareJsScript(Uri targetUri, Match defineMatch, MatchCollection calcMatches, Match htmlHiddenMatch)
+        private static string PrepareJsScript(Uri targetUri, Match defineMatch, MatchCollection calcMatches, Match htmlHiddenMatch)
         {
             var solveScriptStringBuilder = new StringBuilder(defineMatch.Value);
 
@@ -123,71 +118,71 @@ namespace Cloudflare
             return solveScriptStringBuilder.ToString();
         }
 
-        public async Task<CloudflareSolveResult> Solve(HttpClient httpClient, HttpClientHandler httpClientHandler, Uri targetUri, int maxRetry = 3, bool validateCloudflare = true, CloudflareDetectResult detectResult = null)
+        public async Task<SolveResult> Solve(HttpClient httpClient, HttpClientHandler httpClientHandler, Uri targetUri, int maxRetry = 3, bool validateCloudflare = true, DetectResult? detectResult = null)
         {
-            var lastResult = default(CloudflareSolveResult);
+            var lastResult = default(SolveResult);
 
             for (var i = 0; i < maxRetry; i++)
             {
-                if (detectResult == null)
+                if (!detectResult.HasValue)
                     detectResult = await Detect(httpClient, httpClientHandler, targetUri, validateCloudflare);
 
-                switch (detectResult.Protection)
+                switch (detectResult.Value.Protection)
                 {
                     case CloudflareProtection.NoProtection:
-                        lastResult = new CloudflareSolveResult
+                        lastResult = new SolveResult
                         {
                             Success = true,
                             FailReason = "No protection detected",
-                            DetectResult = detectResult,
+                            DetectResult = detectResult.Value,
                         };
                         break;
                     case CloudflareProtection.JavaScript:
                         {
-                            var solve = await SolveJs(httpClient, targetUri, detectResult.Html);
-                            lastResult = new CloudflareSolveResult
+                            var solve = await SolveJs(httpClient, targetUri, detectResult.Value.Html);
+                            lastResult = new SolveResult
                             {
                                 Success = solve.Success,
                                 FailReason = solve.FailReason,
-                                DetectResult = detectResult,
+                                DetectResult = detectResult.Value,
                             };
                         }
                         break;
                     case CloudflareProtection.Captcha:
                         {
-                            if (!Is2CaptchaEnabled())
+                            if (!IsCaptchaSolvingEnabled())
                             {
-                                lastResult = new CloudflareSolveResult
+                                lastResult = new SolveResult
                                 {
                                     Success = false,
-                                    FailReason = "Missing 2Captcha API key to solve the captcha",
-                                    DetectResult = detectResult,
+                                    FailReason = "Missing captcha provider",
+                                    DetectResult = detectResult.Value,
                                 };
                             }
 
-                            var solve = await SolveCaptcha(httpClient, targetUri, detectResult.Html);
-                            lastResult = new CloudflareSolveResult
+                            var solve = await SolveCaptcha(httpClient, targetUri, detectResult.Value.Html);
+                            lastResult = new SolveResult
                             {
                                 Success = solve.Success,
                                 FailReason = solve.FailReason,
-                                DetectResult = detectResult,
+                                DetectResult = detectResult.Value,
                             };
                         }
                         break;
                     case CloudflareProtection.Banned:
-                        lastResult = new CloudflareSolveResult
+                        lastResult = new SolveResult
                         {
                             Success = false,
-                            FailReason = "This IP address is banned on the website",
-                            DetectResult = detectResult,
+                            FailReason = "IP address is banned",
+                            DetectResult = detectResult.Value,
                         };
                         break;
                     case CloudflareProtection.Unknown:
-                        lastResult = new CloudflareSolveResult
+                        lastResult = new SolveResult
                         {
                             Success = false,
                             FailReason = "Unknown protection detected",
-                            DetectResult = detectResult,
+                            DetectResult = detectResult.Value,
                         };
                         break;
                     default:
@@ -203,7 +198,7 @@ namespace Cloudflare
             return lastResult;
         }
 
-        public async Task<CloudflareDetectResult> Detect(HttpClient httpClient, HttpClientHandler httpClientHandler, Uri targetUri, bool validateCloudflare = true)
+        public async Task<DetectResult> Detect(HttpClient httpClient, HttpClientHandler httpClientHandler, Uri targetUri, bool validateCloudflare = true)
         {
             PrepareHttpHandler(httpClientHandler);
             PrepareHttpHeaders(httpClient.DefaultRequestHeaders, targetUri);
@@ -216,14 +211,14 @@ namespace Cloudflare
                 var html = await response.Content.ReadAsStringAsync();
                 if (html.Contains("<title>Just a moment...</title>"))
                 {
-                    return new CloudflareDetectResult
+                    return new DetectResult
                     {
                         Protection = CloudflareProtection.JavaScript,
                         Html = html,
                     };
                 }
 
-                return new CloudflareDetectResult
+                return new DetectResult
                 {
                     Protection = CloudflareProtection.Unknown,
                     Html = html,
@@ -235,7 +230,7 @@ namespace Cloudflare
                 var html = await response.Content.ReadAsStringAsync();
                 if (html.Contains("<title>Attention Required! |"))
                 {
-                    return new CloudflareDetectResult
+                    return new DetectResult
                     {
                         Protection = CloudflareProtection.Captcha,
                         Html = html,
@@ -244,14 +239,14 @@ namespace Cloudflare
 
                 if (html.Contains("<title>Access denied |"))
                 {
-                    return new CloudflareDetectResult
+                    return new DetectResult
                     {
                         Protection = CloudflareProtection.Banned,
                         Html = html,
                     };
                 }
 
-                return new CloudflareDetectResult
+                return new DetectResult
                 {
                     Protection = CloudflareProtection.Unknown,
                     Html = html,
@@ -260,13 +255,13 @@ namespace Cloudflare
 
             if ((!validateCloudflare || response.Headers.Contains("CF-RAY")) && (response.IsSuccessStatusCode || _statusCodeWhitelist.Contains((int)response.StatusCode)))
             {
-                return new CloudflareDetectResult
+                return new DetectResult
                 {
                     Protection = CloudflareProtection.NoProtection,
                 };
             }
 
-            return new CloudflareDetectResult
+            return new DetectResult
             {
                 Protection = CloudflareProtection.Unknown,
             };
@@ -277,19 +272,19 @@ namespace Cloudflare
             var formMatch = CloudflareRegex.JsFormRegex.Match(html);
             if (!formMatch.Success)
             {
-                return new InternalSolveResult(false, "Cloudflare (JS): form tag not found");
+                return new InternalSolveResult(false, LayerJavaScript, "form tag not found");
             }
 
             var htmlHidden = CloudflareRegex.JsHtmlHiddenRegex.Match(html);
             if (!htmlHidden.Success)
             {
-                return new InternalSolveResult(false, "Cloudflare (JS): hidden html not found");
+                return new InternalSolveResult(false, LayerJavaScript, "hidden html not found");
             }
 
             var scriptMatch = CloudflareRegex.ScriptRegex.Match(html);
             if (!scriptMatch.Success)
             {
-                return new InternalSolveResult(false, "Cloudflare (JS): script tag not found");
+                return new InternalSolveResult(false, LayerJavaScript, "script tag not found");
             }
 
             var script = scriptMatch.Groups["script"].Value;
@@ -297,13 +292,13 @@ namespace Cloudflare
             var defineMatch = CloudflareRegex.JsDefineRegex.Match(script);
             if (!defineMatch.Success)
             {
-                return new InternalSolveResult(false, "Cloudflare (JS): define variable not found");
+                return new InternalSolveResult(false, LayerJavaScript, "define variable not found");
             }
 
             var calcMatches = CloudflareRegex.JsCalcRegex.Matches(script);
             if (calcMatches.Count == 0)
             {
-                return new InternalSolveResult(false, "Cloudflare (JS): challenge not found");
+                return new InternalSolveResult(false, LayerJavaScript, "challenge not found");
             }
 
             var solveJsScript = PrepareJsScript(targetUri, defineMatch, calcMatches, htmlHidden);
@@ -321,16 +316,19 @@ namespace Cloudflare
 
         private async Task<InternalSolveResult> SubmitJsSolution(HttpClient httpClient, string action, string s, string jschl_vc, string pass, string jschl_answer)
         {
-            var query = $"s={Uri.EscapeDataString(s)}&jschl_vc={Uri.EscapeDataString(jschl_vc)}&pass={Uri.EscapeDataString(pass)}&jschl_answer={Uri.EscapeDataString(jschl_answer)}";
+            var query = $"s={Uri.EscapeDataString(s)}" +
+                        $"&jschl_vc={Uri.EscapeDataString(jschl_vc)}" +
+                        $"&pass={Uri.EscapeDataString(pass)}" +
+                        $"&jschl_answer={Uri.EscapeDataString(jschl_answer)}";
 
             var response = await httpClient.GetAsync($"{action}?{query}");
             if (response.StatusCode != HttpStatusCode.Found)
             {
-                return new InternalSolveResult(false, "Cloudflare (JS): invalid submit response");
+                return new InternalSolveResult(false, LayerJavaScript, "invalid submit response");
             }
 
             var success = response.Headers.Contains("Set-Cookie");
-            return new InternalSolveResult(success, success ? null : "Cloudflare (JS): response cookie not found");
+            return new InternalSolveResult(success, LayerJavaScript, success ? null : "response cookie not found");
         }
 
         private async Task<InternalSolveResult> SolveCaptcha(HttpClient httpClient, Uri targetUri, string html)
@@ -338,34 +336,35 @@ namespace Cloudflare
             var formMatch = CloudflareRegex.CaptchaFormRegex.Match(html);
             if (!formMatch.Success)
             {
-                return new InternalSolveResult(false, "Cloudflare (Captcha): form tag not found");
+                return new InternalSolveResult(false, LayerCaptcha, "form tag not found");
             }
 
             var action = $"{targetUri.Scheme}://{targetUri.Host}{formMatch.Groups["action"]}";
+            var s = formMatch.Groups["s"].Value;
             var siteKey = formMatch.Groups["siteKey"].Value;
 
-            var captchaResult = await _twoCaptcha.SolveReCaptchaV2(siteKey, targetUri.AbsoluteUri);
+            var captchaResult = await _captchaProvider.SolveCaptcha(siteKey, targetUri.AbsoluteUri);
             if (!captchaResult.Success)
             {
-                return new InternalSolveResult(false, $"Cloudflare (Captcha): 2Captcha error ({captchaResult.Response})");
+                return new InternalSolveResult(false, LayerCaptcha, $"captcha provider error ({captchaResult.Response})");
             }
 
-            return await SubmitCaptchaSolution(httpClient, action, captchaResult.Response);
+            return await SubmitCaptchaSolution(httpClient, action, s, captchaResult.Response);
         }
 
-        private async Task<InternalSolveResult> SubmitCaptchaSolution(HttpClient httpClient, string action, string captchaResponse)
+        private async Task<InternalSolveResult> SubmitCaptchaSolution(HttpClient httpClient, string action, string s, string captchaResponse)
         {
-            var query = $"g-recaptcha-response={Uri.EscapeDataString(captchaResponse)}";
+            var query = $"s={Uri.EscapeDataString(s)}" +
+                        $"&g-recaptcha-response={Uri.EscapeDataString(captchaResponse)}";
 
             var response = await httpClient.GetAsync($"{action}?{query}");
             if (response.StatusCode != HttpStatusCode.Found)
             {
-                return new InternalSolveResult(false, "Cloudflare (Captcha): invalid submit response");
+                return new InternalSolveResult(false, LayerCaptcha, "invalid submit response");
             }
 
             var success = response.Headers.Contains("Set-Cookie");
-            return new InternalSolveResult(success, success ? null : "Cloudflare (Captcha): response cookie not found");
+            return new InternalSolveResult(success, LayerCaptcha, success ? null : "response cookie not found");
         }
-
     }
 }

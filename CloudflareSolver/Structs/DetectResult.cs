@@ -1,6 +1,6 @@
-﻿namespace Cloudflare
+﻿namespace Cloudflare.Structs
 {
-    public class CloudflareDetectResult
+    public struct DetectResult
     {
         public CloudflareProtection Protection;
         public string Html;

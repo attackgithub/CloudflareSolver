@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Net;
 using System.Net.Http;
+using Cloudflare.CaptchaProviders;
 
 namespace Cloudflare.Sandbox
 {
@@ -8,8 +9,11 @@ namespace Cloudflare.Sandbox
     {
         static void Main(string[] args)
         {
-            // If you do not want to use the ReCaptchaV2 solver simply remove the parameter
-            var cf = new CloudflareSolver("YOUR_2CAPTCHA_KEY");
+            /* Example use with captcha provider:
+             * var cf = new CloudflareSolver(new TwoCaptchaProvider("YOUR_API_KEY"));
+             * var cf = new CloudflareSolver(new AntiCaptchaProvider("YOUR_API_KEY"));
+             */
+            var cf = new CloudflareSolver();
 
             var httpClientHandler = new HttpClientHandler
             {

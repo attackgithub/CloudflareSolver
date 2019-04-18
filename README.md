@@ -14,19 +14,30 @@ Cloudflare JavaScript & ReCaptchaV2 challenge solving library (aka. *Under Attac
 ## Requirements
 
 * This library is compiled with .NET Standard 1.3. Check full implementation support [here](https://docs.microsoft.com/en-us/dotnet/standard/net-standard)
-* To use the ReCaptchaV2 solver you must create an account on [2Captcha](http://2captcha.com/?from=6591885)
+* To use the ReCaptchaV2 solver you must create an account on of the [available captcha providers](#available-captcha-providers)
 
 ## Download
 
 * https://github.com/Zaczero/CloudflareSolver/releases/latest
 
+## Available captcha providers
+
+* [2Captcha](http://2captcha.com/?from=6591885) *($2.99 for 1000 captchas)* using [Zaczero/2Captcha](https://github.com/Zaczero/2Captcha)
+* [Anti Captcha](http://getcaptchasolution.com/i4lbjatsex) *($2.00 for 1000 captchas)* using [Zaczero/AntiCaptcha](https://github.com/Zaczero/AntiCaptcha)
+
 ## Getting started
 
 ```cs
-// If you do not want to use the ReCaptchaV2 solver simply remove the parameter
-var cf = new CloudflareSolver("YOUR_2CAPTCHA_KEY");
+/* Example use with captcha provider:
+ * var cf = new CloudflareSolver(new TwoCaptchaProvider("YOUR_API_KEY"));
+ * var cf = new CloudflareSolver(new AntiCaptchaProvider("YOUR_API_KEY"));
+ */
+var cf = new CloudflareSolver();
 
-var httpClientHandler = new HttpClientHandler();
+var httpClientHandler = new HttpClientHandler
+{
+	AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate,
+};
 var httpClient = new HttpClient(httpClientHandler);
 var uri = new Uri("https://uam.zaczero.pl/");
 
