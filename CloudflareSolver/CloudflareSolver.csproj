@@ -4,16 +4,16 @@
     <TargetFrameworks>netstandard1.3;netstandard2.0</TargetFrameworks>
     <RootNamespace>Cloudflare</RootNamespace>
     <PackageIconUrl>https://i.imgur.com/1kOksXx.png</PackageIconUrl>
-    <Version>1.4.0</Version>
+    <Version>1.4.1</Version>
     <Authors>Zaczero (Kamil Monicz)</Authors>
     <Company>Zaczero (Kamil Monicz)</Company>
     <Description>Cloudflare JavaScript &amp; ReCaptchaV2 challenge solving library (aka. *Under Attack Mode* bypass).</Description>
-    <Copyright>Copyright (c) Zaczero (Kamil Monicz) 2019</Copyright>
+    <Copyright>Copyright (c) 2019 Kamil Monicz</Copyright>
     <PackageLicenseUrl></PackageLicenseUrl>
     <PackageProjectUrl>https://github.com/Zaczero/CloudflareSolver</PackageProjectUrl>
-    <AssemblyVersion>1.4.0.0</AssemblyVersion>
-    <FileVersion>1.4.0.0</FileVersion>
-    <PackageTags>cloudflare, under, attack, mode, uam, solver, solving, library, cloudflaresolver, resolver, recaptchav2, recaptcha, captcha, nodejs, javascript, challenge, 2captcha, utilities</PackageTags>
+    <AssemblyVersion>1.4.1.0</AssemblyVersion>
+    <FileVersion>1.4.1.0</FileVersion>
+    <PackageTags>cloudflare, under, attack, mode, uam, solver, solving, library, resolver, recaptchav2, recaptcha, captcha, javascript, challenge, 2captcha, anticaptcha, anti, ddos</PackageTags>
     <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
   </PropertyGroup>
