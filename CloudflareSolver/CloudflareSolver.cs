@@ -41,12 +41,12 @@ namespace Cloudflare
             return _captchaProvider != null;
         }
 
-        private static double ExecuteJavaScript(string script)
+        private static string ExecuteJavaScript(string script)
         {
             return new Engine()
                 .Execute(script)
                 .GetCompletionValue()
-                .AsNumber();
+                .AsString();
         }
 
         private static void PrepareHttpHandler(HttpClientHandler httpClientHandler)
@@ -86,7 +86,7 @@ namespace Cloudflare
                 headers.Add("Upgrade-Insecure-Requests", "1");
         }
 
-        private static string PrepareJsScript(Uri targetUri, Match defineMatch, MatchCollection calcMatches, Match htmlHiddenMatch)
+        private static string PrepareJsScript(Uri targetUri, Match defineMatch, MatchCollection calcMatches, Match htmlHiddenMatch, bool addHostLengthToResult)
         {
             var solveScriptStringBuilder = new StringBuilder(defineMatch.Value);
 
@@ -113,7 +113,12 @@ namespace Cloudflare
                 }
             }
 
-            solveScriptStringBuilder.Append($"+{defineMatch.Groups["className"].Value}.{defineMatch.Groups["propName"].Value}.toFixed(10)");
+            if (addHostLengthToResult)
+            {
+                solveScriptStringBuilder.Append($"{defineMatch.Groups["className"].Value}.{defineMatch.Groups["propName"].Value} += {targetUri.Host.Length};");
+            }
+
+            solveScriptStringBuilder.Append($"{defineMatch.Groups["className"].Value}.{defineMatch.Groups["propName"].Value}.toFixed(10)");
 
             return solveScriptStringBuilder.ToString();
         }
@@ -276,10 +281,14 @@ namespace Cloudflare
             }
 
             var htmlHidden = CloudflareRegex.JsHtmlHiddenRegex.Match(html);
+            
+            // Some websites are still using old JavaScript protection without hidden html
+            /*
             if (!htmlHidden.Success)
             {
                 return new InternalSolveResult(false, LayerJavaScript, "hidden html not found");
             }
+            */
 
             var scriptMatch = CloudflareRegex.ScriptRegex.Match(html);
             if (!scriptMatch.Success)
@@ -301,13 +310,19 @@ namespace Cloudflare
                 return new InternalSolveResult(false, LayerJavaScript, "challenge not found");
             }
 
-            var solveJsScript = PrepareJsScript(targetUri, defineMatch, calcMatches, htmlHidden);
+            var resultMatch = CloudflareRegex.JsResultRegex.Match(script);
+            if (!resultMatch.Success)
+            {
+                return new InternalSolveResult(false, LayerJavaScript, "result not found");
+            }
+
+            var solveJsScript = PrepareJsScript(targetUri, defineMatch, calcMatches, htmlHidden, resultMatch.Groups["addHostLength"].Success);
 
             var action = $"{targetUri.Scheme}://{targetUri.Host}{formMatch.Groups["action"]}";
             var s = formMatch.Groups["s"].Value;
             var jschl_vc = formMatch.Groups["jschl_vc"].Value;
             var pass = formMatch.Groups["pass"].Value;
-            var jschl_answer = ExecuteJavaScript(solveJsScript).ToString(CultureInfo.InvariantCulture);
+            var jschl_answer = ExecuteJavaScript(solveJsScript).Replace(',', '.');
 
             await Task.Delay(4000);
 
