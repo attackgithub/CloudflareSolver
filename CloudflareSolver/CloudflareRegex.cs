@@ -4,7 +4,7 @@ namespace Cloudflare
 {
     internal static class CloudflareRegex
     {
-        public static readonly Regex ScriptRegex = new Regex(@"<script.*?>(?<script>.*?)<\/script>", RegexOptions.Singleline | RegexOptions.Compiled);
+        public static readonly Regex ScriptRegex = new Regex(@"<script.*?>(?<script>\s*\/\/.*?)<\/script>", RegexOptions.Singleline | RegexOptions.Compiled);
         public static readonly Regex JsDefineRegex = new Regex(@"var s,t,o,p,b,r,e,a,k,i,n,g,\w, (?<className>\w+?)={""(?<propName>\w+?)"":.*?};", RegexOptions.Singleline | RegexOptions.Compiled);
         public static readonly Regex JsCalcRegex = new Regex(@"\s*?\w+?\.\w+?[+\-*\/]=.*?;(?:\s.*?;)?", RegexOptions.Singleline | RegexOptions.Compiled);
         public static readonly Regex JsHtmlHiddenRegex = new Regex(@"id=""cf-dn-\S+"">(?<inner>.*?)<\/div>", RegexOptions.Singleline | RegexOptions.Compiled);

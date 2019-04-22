@@ -214,7 +214,7 @@ namespace Cloudflare
             if (response.StatusCode == HttpStatusCode.ServiceUnavailable)
             {
                 var html = await response.Content.ReadAsStringAsync();
-                if (html.Contains("<title>Just a moment...</title>"))
+                if (html.Contains("var s,t,o,p,b,r,e,a,k,i,n,g"))
                 {
                     return new DetectResult
                     {
@@ -233,7 +233,7 @@ namespace Cloudflare
             if (response.StatusCode == HttpStatusCode.Forbidden)
             {
                 var html = await response.Content.ReadAsStringAsync();
-                if (html.Contains("<title>Attention Required! |"))
+                if (html.Contains("g-recaptcha"))
                 {
                     return new DetectResult
                     {
@@ -242,7 +242,7 @@ namespace Cloudflare
                     };
                 }
 
-                if (html.Contains("<title>Access denied |"))
+                if (html.Contains("Access denied"))
                 {
                     return new DetectResult
                     {
